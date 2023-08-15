@@ -8,30 +8,70 @@
 #define START_PREAMBLE_0 2614
 #define END_PULSE_0 4850
 
-inline void pulse(bool value, uint32_t us)
+#define SEND_TRIES 20
+
+FANControl::FANControl(rtl_433_ESP& rf, SX1278& radio) : 
+    isOn_(false), speed_(5), timer_(0), rotation_(DEG_ZERO), mode_(NORMAL),
+    rf_(rf), radio_(radio)
 {
-    // digitalWrite(RF_MODULE_DIO2, value ? 1 : 0);
+}
+
+void FANControl::switchOn(uint8_t speed, uint8_t timer, Rotation rotation, Mode mode)
+{
+    setSpeed(speed);
+    setTimer(timer);
+    setRotation(rotation);
+    setMode(mode);
+    isOn_ = true;
+    sendCommand(buildCommand(true));
+}
+
+void FANControl::switchOff()
+{
+    isOn_ = false;
+    sendCommand(0x0);
+}
+
+uint16_t FANControl::buildCommand(bool startOn)
+{
+    uint16_t ret = 0;
+    if(startOn){
+        ret |= (1 << 13);
+    }
+    if(isOn_){
+        ret |= (1 << 12);
+    }
+    ret |= ((mode_ & 0x3) << 10);
+    ret |= ((rotation_ & 0x3) << 8);
+    ret |= ((timer_ & 0xF) << 4);
+    ret |= (speed_ & 0xF);
+    return ret;
+}
+
+void FANControl::pulse(bool value, uint32_t us)
+{
+    digitalWrite(RF_MODULE_DIO2, value ? 1 : 0);
     delayMicroseconds(us);
 }
 
-inline void sendBit(bool value)
+void FANControl::sendBit(bool value)
 {
     //Send pulse
     pulse(1, BIT_START_PULSE);
     pulse(0, value ? BIT_1_PULSE : BIT_0_PULSE);
 }
 
-void sendCommand(rtl_433_ESP& rf, SX1278& radio, uint16_t command)
+void FANControl::sendCommand(uint16_t command)
 {
-    // rf.getStatus();
-
-    rf.disableReceiver();
+    //Disable receiver
+    rf_.disableReceiver();
     
-    if(radio.transmitDirect() != RADIOLIB_ERR_NONE){
+    if(radio_.transmitDirect() != RADIOLIB_ERR_NONE){
         Serial.println("Radiolib error!");
     }
-    // pinMode(RF_MODULE_DIO2, OUTPUT);    //Data pin
-    for(int j=0;j<50;++j){
+
+    pinMode(RF_MODULE_DIO2, OUTPUT);    //Data pin
+    for(int j=0;j<SEND_TRIES;++j){
         //Pulse high for ~8ms
         pulse(1, START_PREAMBLE_1);
         //Pulse low for ~2550us
@@ -48,8 +88,8 @@ void sendCommand(rtl_433_ESP& rf, SX1278& radio, uint16_t command)
         pulse(0, END_PULSE_0);
     }
     //Put receiver back to normal mode
-    // pinMode(RF_MODULE_DIO2, INPUT);
-    // radio.setDataShapingOOK(2);
-    radio.receiveDirect();
-    rf.enableReceiver();
+    pinMode(RF_MODULE_DIO2, INPUT);
+    radio_.setDataShapingOOK(2);
+    radio_.receiveDirect();
+    rf_.enableReceiver();
 }

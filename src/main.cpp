@@ -8,9 +8,7 @@
 #include <rtl_433_ESP.h>
 
 #include "fan.hpp"
-
-#include "pulse_data.h"
-#include "signalDecoder.h"
+#include "blindT6.hpp"
 
 #define JSON_MSG_BUFFER 512
 
@@ -22,7 +20,8 @@ extern SX1278 radio;
 // SX1278 radio = RADIO_LIB_MODULE;
 
 int count = 0;
-
+FANControl fanCtrl(rf, radio);
+BlindT6Control curtainControl(rf, radio, 0x9A276B0, 0x5);
 
 void logJson(JsonObject& jsondata) {
 #if defined(ESP8266) || defined(ESP32) || defined(__AVR_ATmega2560__) || defined(__AVR_ATmega1280__)
@@ -31,13 +30,7 @@ void logJson(JsonObject& jsondata) {
   char JSONmessageBuffer[JSON_MSG_BUFFER];
 #endif
   jsondata.printTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
-#if defined(setBitrate) || defined(setFreqDev) || defined(setRxBW)
-  Log.setShowLevel(false);
-  Log.notice(F("."));
-  Log.setShowLevel(true);
-#else
   Log.notice(F("Received message : %s" CR), JSONmessageBuffer);
-#endif
 }
 
 void rtl_433_Callback(char* message) {
@@ -58,145 +51,39 @@ void setup() {
   Log.notice(F("****** setup ******" CR));
   rf.initReceiver(RF_MODULE_RECEIVER_GPIO, RF_MODULE_FREQUENCY);
   rf.setCallback(rtl_433_Callback, messageBuffer, JSON_MSG_BUFFER);
-  // radio.setBitRate(32.768002);
-  // radio.setBitRate(4.8);
+
+  // radio.setBitRate(32.768002); //TODO: Test if we need it for TX
   rf.enableReceiver();
   Log.notice(F("****** setup complete ******" CR));
   rf.getModuleStatus();
 }
 
-unsigned long uptime() {
-  static unsigned long lastUptime = 0;
-  static unsigned long uptimeAdd = 0;
-  unsigned long uptime = millis() / 1000 + uptimeAdd;
-  if (uptime < lastUptime) {
-    uptime += 4294967;
-    uptimeAdd += 4294967;
-  }
-  lastUptime = uptime;
-  return uptime;
-}
-
-int next = uptime() + 30;
-
-#if defined(setBitrate) || defined(setFreqDev) || defined(setRxBW)
-
-#  ifdef setBitrate
-#    define TEST    "setBitrate" // 17.24 was suggested
-#    define STEP    2
-#    define stepMin 1
-#    define stepMax 300
-// #    define STEP    1
-// #    define stepMin 133
-// #    define stepMax 138
-#  elif defined(setFreqDev) // 40 kHz was suggested
-#    define TEST    "setFrequencyDeviation"
-#    define STEP    1
-#    define stepMin 5
-#    define stepMax 200
-#  elif defined(setRxBW)
-#    define TEST "setRxBandwidth"
-
-#    ifdef defined(RF_SX1276) || defined(RF_SX1278)
-#      define STEP    5
-#      define stepMin 5
-#      define stepMax 250
-#    else
-#      define STEP    5
-#      define stepMin 58
-#      define stepMax 812
-// #      define STEP    0.01
-// #      define stepMin 202.00
-// #      define stepMax 205.00
-#    endif
-#  endif
-float step = stepMin;
-#endif
-
 unsigned long sendTime = millis() + 10000;
 
 void loop() {
-  static unsigned int currentCmd = 0;
-  static const uint16_t cmd[] = {0x4FFE, 0x6FFE, 0x6FFD, 0x6FFC, 0x6FFB, 0x7FFF};
-  static const int cmdCount = sizeof(cmd)/sizeof(uint16_t);
+  static unsigned int currentSpeed = 0;
+  static const int nbSpeed = 12;
 
   rf.loop();
-  // if(millis() >= sendTime){
-  //   Serial.printf("Sending command 0x%02X\n", cmd[currentCmd]);
-  //   sendCommand(rf, radio, cmd[currentCmd]);
-  //   ++currentCmd;
-  //   if(currentCmd >= cmdCount){
-  //       currentCmd = 0;
-  //   }
-  //   sendTime = millis() + 10000;
-  // }
+  //Fan control testing
+  if(millis() >= sendTime){
+    Serial.println("Sending data");
+    curtainControl.stop();
+    /*if(currentSpeed == 0){
+      currentSpeed = 1;
+      fanCtrl.switchOn(currentSpeed);
+    }else{
+      fanCtrl.setSpeed(currentSpeed);
+      fanCtrl.sendCommand();
+    }
+    if(++currentSpeed > nbSpeed){
+      fanCtrl.switchOff();
+      currentSpeed = 0;
+    }*/
 
-  // if(millis() >= sendTime){
-  //   Serial.printf("Sending pulses\n");
-  //   pulse_data_t* rtl_pulses = (pulse_data_t*)heap_caps_calloc(1, sizeof(pulse_data_t), MALLOC_CAP_INTERNAL);
-    
-  //   const uint8_t data[] = {
-  //     1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1
-  //   };
-  //   rtl_pulses->signalDuration = (sizeof(data)/sizeof(uint8_t)) * 2000;
-  //   int pulseNr = 0;
-  //   uint8_t prevVal = 0;
-  //   for(int i=0;i<sizeof(data)/sizeof(uint8_t);++i){
-  //     if(data[i] == 1){
-  //       rtl_pulses->pulse[pulseNr] = 960;
-  //       rtl_pulses->gap[pulseNr] = 960;
-  //       ++pulseNr;
-  //     }else{
-  //       if(prevVal){
-  //         rtl_pulses->gap[pulseNr] = 1952;
-  //         prevVal = 0;
-  //       }else{
-  //         rtl_pulses->pulse[pulseNr] = 1952;
-  //         prevVal = 1;
-  //         ++pulseNr;
-  //       }
-  //     }
-  //   }
-  //   rtl_pulses->num_pulses = pulseNr + 1;
-  //   processSignal(rtl_pulses);
-
-  //   sendTime = millis() + 10000;
-  // }
-
-
+    sendTime = millis() + 10000;
+  }
 
   delay(5);
-#if defined(setBitrate) || defined(setFreqDev) || defined(setRxBW)
-  char stepPrint[8];
-  if (uptime() > next) {
-    next = uptime() + 120; // 60 seconds
-    dtostrf(step, 7, 2, stepPrint);
-    Log.notice(F(CR "Finished %s: %s, count: %d" CR), TEST, stepPrint, count);
-    step += STEP;
-    if (step > stepMax) {
-      step = stepMin;
-    }
-    dtostrf(step, 7, 2, stepPrint);
-    Log.notice(F("Starting %s with %s" CR), TEST, stepPrint);
-    count = 0;
 
-    int16_t state = 0;
-#  ifdef setBitrate
-    state = rf.setBitRate(step);
-    RADIOLIB_STATE(state, TEST);
-#  elif defined(setFreqDev)
-    state = rf.setFrequencyDeviation(step);
-    RADIOLIB_STATE(state, TEST);
-#  elif defined(setRxBW)
-    state = rf.setRxBandwidth(step);
-    if ((state) != RADIOLIB_ERR_NONE) {
-      Log.notice(F(CR "Setting  %s: to %s, failed" CR), TEST, stepPrint);
-      next = uptime() - 1;
-    }
-#  endif
-
-    rf.receiveDirect();
-    // rf.getModuleStatus();
-  }
-#endif
 }
